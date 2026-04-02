@@ -1,6 +1,6 @@
 ---
 name: sancai-tian
-description: 三才阵 · 天位。管理 harness 全景图谱，负责播种、全景渲染、图谱压缩三个子技能。由阵眼路由触发，或用户说「播种」「全景」「压缩图谱」时直接触发。
+description: 三才阵 · 天位。管理 harness 全景图谱，负责播种、全景渲染、压缩。播种和全景操作默认自主完成，不需要逐步确认。
 ---
 
 # 天 · 全景图谱
@@ -11,34 +11,36 @@ description: 三才阵 · 天位。管理 harness 全景图谱，负责播种、
 
 ---
 
-## 子技能路由
+## 子技能（AI 内部路由）
 
 | 信号 | 执行 |
 |------|------|
-| 播种、新想法、有个点、seed | → [播种](#播种) |
-| 全景、show graph、我在哪、图谱 | → [全景](#全景) |
-| 压缩、太多了、清理图谱 | → [压缩](#压缩) |
+| 模糊想法、新种子、有个点 | → [播种](#播种) |
+| 全景、show graph、我在哪 | → [全景](#全景) |
+| 节点 > 50 / 人位触发 | → [压缩](#压缩) |
 
 ---
 
 ## 播种
 
-**Step 0** — 加载现有图谱：
+**Step 0** — 加载图谱：
 ```bash
-cat ~/.harness/graph.json 2>/dev/null || echo '{"version":"1.0","projects":[],"matters":[],"nodes":[],"edges":[]}'
+cat ~/.harness/graph.json 2>/dev/null || echo '{"version":"1.0","projects":[],"matters":[],"nodes":[],"edges":[],"archived":[]}'
 ```
 
-**Step 1** — 接收种子，不追问，直接进入 Step 2。
+**Step 1** — 接收种子，不追问。
 
-**Step 2** — 一次归属提问：
+**Step 2** — 归属判断：
+
+若图谱中已有 projects/matters，AI **自行推断**最可能的归属。如果推断置信度高（种子内容明显属于某个 project），直接归属，不问。如果模糊，一次提问：
 
 > "这个点，更靠近哪里？
-> [列出现有 projects/matters，最多 5 个]
-> 还是这是新的 project / matter？"
+> [列出最相关的 2-3 个]
+> 还是新的 project/matter？"
 
 若图谱为空：
 
-> "这属于工作中的项目，还是生活中的事项？给它一个临时名字。"
+> "这属于工作项目还是生活事项？给它一个名字。"
 
 **Step 3** — 自动扩展，生成展示：
 
@@ -53,11 +55,13 @@ cat ~/.harness/graph.json 2>/dev/null || echo '{"version":"1.0","projects":[],"m
 
 🔗 发现连接：
    "{existing}" → related_to → "{new}"
-
-✏️ 有调整？或回复「确认」保存。
 ```
 
-**Step 4** — 用户确认后写入图谱（见 `references/graph-ops.md`）。
+**Step 4** — 写入图谱。
+
+对于常规播种（单个种子、归属明确），展示后**直接保存**，不等"确认"。用户如有异议会主动说。
+
+对于批量播种或涉及新 project 创建，展示后等一轮反馈。
 
 ---
 
@@ -89,10 +93,10 @@ cat ~/.harness/graph.json 2>/dev/null || echo '{"version":"1.0","projects":[],"m
 
 渲染后，识别并提示**最显著的 1 个**涌现信号：
 
-- 孤岛：project 无 action → "这个项目停滞了"
-- 堵塞：question 阻碍多个 action → "这个问题卡住了不少事"
-- 张力：contradicts 边未解决 → "这里有个未处理的矛盾"
-- 收敛：thought↓ action↑ → "这个项目在收敛"
+- **孤岛**：project 无 action → "这个项目停滞了"
+- **堵塞**：question 阻碍多个 action → "这个问题卡住了不少事"
+- **张力**：contradicts 边未解决 → "这里有个未处理的矛盾"
+- **收敛**：thought↓ action↑ → "这个项目在收敛"
 
 ---
 
@@ -104,34 +108,31 @@ cat ~/.harness/graph.json 2>/dev/null || echo '{"version":"1.0","projects":[],"m
 
 **压缩规则（按优先级）：**
 
-1. **合并同义节点**：同一 parent 下，内容相似度 > 80% → 保留更新的，归档旧的
-2. **归档已解决节点**：status = resolved 且超过 14 天未引用 → 移入 `archived` 数组
-3. **合并孤立 thought**：未归属超过 30 天且无边连接 → 压缩为一条摘要节点
-4. **压缩 insight 链**：同一 project 超过 5 个 insight → 提炼为 1 个核心 insight，其余归档
+1. 合并同义节点：同一 parent，内容相似 > 80% → 保留更新的
+2. 归档已解决：status=resolved 且 > 14 天未引用 → 移入 archived
+3. 合并孤立 thought：未归属 > 30 天无边连接 → 压缩为摘要节点
+4. 压缩 insight 链：同 project > 5 个 insight → 提炼为 1 个核心
 
-压缩前展示计划，用户确认后执行：
+压缩前展示计划：
 
 ```
 🗜 压缩计划
   合并: {n} 个同义节点
   归档: {n} 个已解决节点
   摘要: {n} 个孤立碎片
-  
+
   压缩后：{before} → {after} 个活跃节点
-  
-  确认执行？[Y/n]
+
+  确认？[Y/n]
 ```
+
+压缩涉及批量数据变更，需要用户确认。
 
 ---
 
 ## 节点类型
 
-| 类型 | 含义 |
-|------|------|
-| `thought` | 模糊想法，尚未成形 |
-| `action` | 明确的下一步 |
-| `question` | 未解决的疑问 |
-| `insight` | 理解的跃升 |
+`thought` · `action` · `question` · `insight`
 
 ## 边类型
 
@@ -141,5 +142,4 @@ cat ~/.harness/graph.json 2>/dev/null || echo '{"version":"1.0","projects":[],"m
 
 ## 参考文件
 
-- `references/graph-schema.md` — 完整 JSON schema
-- `references/graph-ops.md` — 读写操作代码片段
+- `references/graph-schema.md` — 完整 JSON schema 与读写操作
